@@ -1,0 +1,265 @@
+/* This a small macro i wrote to export word content in to JSON format. 
+I am not a VBA programmer, I wanted it for one of my project and I couldn't get on the net. So I decided to write it
+myself, I searched for pices of code on net and customized it to my needs. Feel free to update/improve this code
+*/
+Sub ReturnTableText()
+Dim tblCount As Integer
+Dim cellCount As Integer
+Set oData = New Collection
+
+MsgBox (RemoveUnWantedGraphs())
+MsgBox (ListToHtml())
+UpdateDocLinks
+tblCount = ActiveDocument.Tables.Count
+    For i = 1 To tblCount
+        Set oTable = ActiveDocument.Tables(i)
+       If oTable.Uniform = True Then
+         Set pageData = New Collection
+         cellCount = oTable.Columns(1).cells.Count
+         For s = 1 To cellCount
+            Set oCell = oTable.Columns(1).cells(s)
+            'For Each oCell In oTable.Columns(1).cells
+               If oCell <> Empty Then
+               
+                   Set myRange = oCell.Range
+                   myRange.MoveEnd Unit:=wdCharacter, Count:=-1
+                   Dim id As String
+                   id = TrimToWord(myRange.Text)
+                   If Len(id) > 0 Then
+                       Set curCell = oCell.Row.cells.Item(2)
+                       Dim content As String: content = FullTrim(ValidateRange(curCell.Range))
+                       pageData.Add Array(content, LCase(id))
+                   End If
+                End If
+            'Next oCell
+         Next
+        oData.Add pageData
+        Else
+        MsgBox ("table " & i & " has Merged cells")
+        End If
+    Next
+    If oData.Count > 0 Then
+        If WriteJSON(oData) = True Then
+            MsgBox ("File created succsessfully")
+        Else
+            MsgBox ("Fail to created File")
+        End If
+    Else
+        MsgBox ("Collection is empty")
+    End If
+    
+End Sub
+
+Function WriteJSON(ByVal data As Collection) As Variant
+    Dim dblQuote As String: dblQuote = Chr(34)
+    Dim NLine As String: NLine = Chr(13)
+    Dim str As String
+    str = "{" & dblQuote & "page" & dblQuote & ":[" & NLine 'Main Object string
+    
+    pageCount = data.Count 'Total Pages
+    For iCtr = 1 To pageCount
+       str = str & "{" 'create top level Page object String
+       Dim counter As Integer: counter = 1
+       Set Page = data(iCtr) 'Page
+            For Each prop In Page 'Property
+            Dim strItem As String 'temp String
+            strItem = NLine & dblQuote & prop(1) & dblQuote & " : " & dblQuote & prop(0) & dblQuote 'Property string
+            If counter = Page.Count Then 'dont not add "," to after las property
+                 strItem = strItem
+            Else
+                strItem = strItem & ", "  'add ","
+            End If
+            str = str & strItem 'Concatinate with main string
+            counter = counter + 1
+        Next
+         If iCtr = pageCount Then 'dont not add "," to after last property
+           str = str & "} " & NLine '
+        Else
+            str = str & "}, " & NLine 'close Page Object String"
+        End If
+    Next
+    str = str & " ]}"
+    Dim saveResult As Boolean
+    saveResult = writeTextFile(str)
+    WriteJSON = saveResult
+End Function
+
+Function FullTrim(ByRef str As String) As Variant
+
+    If InStr(1, str, "_#_") = 0 Then
+        str = Trim(str)
+    End If
+    str = Replace(str, Chr(7), "")
+    str = Replace(str, Chr(13), "<br/>")
+    str = Replace(str, Chr(13) & Chr(7), "")
+    str = Replace(str, Chr(21), "")
+    While Right(Trim(str), 5) = "<br/>"
+        str = Mid(str, 1, Len(str) - 5)
+    Wend
+    FullTrim = str
+End Function
+
+Function TrimToWord(ByRef str As String) As Variant
+     str = Trim(str)
+    str = Replace(str, Chr(7), "")
+    str = Replace(str, Chr(13), "")
+    str = Replace(str, Chr(13) & Chr(7), "")
+    str = Replace(str, Chr(21), "")
+    str = Replace(str, ":", "")
+    str = Replace(str, " ", "")
+    str = Replace(str, "-", "")
+    str = Replace(str, "_", "")
+    While Right(Trim(str), 5) = "<br/>"
+        str = Mid(str, 1, Len(str) - 5)
+    Wend
+    TrimToWord = str
+End Function
+
+Function ValidateRange(rng) As String
+    Dim str As String: str = ""
+    Dim BoldFound As Boolean: BoldFound = False
+    Dim ItalicFound As Boolean: ItalicFound = False
+    Dim uLineFound As Boolean: uLineFound = False
+    Dim wCount As Integer: wCount = rng.Words.Count - 1
+    Dim Wrds As Words
+    Dim Wrd As Range
+   
+    For i = 1 To wCount
+    Dim tags As String: tags = ""
+        Set Wrd = rng.Words.Item(i)
+        If Wrd.Characters.Count > 0 Then
+           'Bold Start
+           If Wrd.Bold = -1 And BoldFound = False Then
+                  BoldFound = True
+                  tags = tags + "<B>"
+            End If
+            ' Italic Start
+            If Wrd.Italic = -1 And ItalicFound = False Then
+                  ItalicFound = True
+                  tags = tags + "<I>"
+            End If
+                        
+            ' Underline Start
+            If Wrd.Underline = 1 And uLineFound = False Then
+                  uLineFound = True
+                  tags = tags + "<U>"
+            End If
+            
+             ' Underline End
+            If Wrd.Underline = 0 And uLineFound = True Then
+                  uLineFound = False
+                  tags = tags + "</U>"
+            End If
+                        
+            
+            'Italic End
+            If Wrd.Italic = 0 And ItalicFound = True Then
+                 ItalicFound = False
+                 tags = tags + "</I>"
+            End If
+            'Bold End
+            If Wrd.Bold = 0 And BoldFound = True Then
+                 BoldFound = False
+                 tags = tags + "</B>"
+            End If
+            str = str + tags + Wrd.Text
+        End If
+    Next
+   
+    'close underline tag
+      If uLineFound = True Then
+        str = str + "</U>"
+         uLineFound = False
+      End If
+      
+    'close italic tag
+      If ItalicFound = True Then
+        str = str + "</I>"
+         ItalicFound = False
+      End If
+      
+     'close bold tag
+      If BoldFound = True Then
+        str = str + "</B>"
+         BoldFound = False
+      End If
+      
+          
+        ValidateRange = str
+End Function
+
+
+ Function writeTextFile(str) As Variant
+     Dim sLine As String
+    Dim sFName As String    'Path and name of text file
+    Dim iFNumber As Integer    'File number
+    Dim lRow As Long     'Row number in worksheet
+
+    sFName = "D:\page.json"
+    iFNumber = FreeFile
+    Open sFName For Output As #iFNumber
+   Print #iFNumber, str
+    Close #iFNumber
+    writeTextFile = True
+End Function
+
+Function RemoveUnWantedGraphs() As Variant
+    Dim shp
+    Dim rangeToTest As Range
+    Dim c As Range
+    Dim shpList
+
+
+    'Loop Over the the selected cells
+   
+        'Inner loop to iterate over the shapes collection for the activesheet
+        Set shpList = ActiveDocument.InlineShapes
+          
+        For Each shp In shpList
+            Application.StatusBar = "Analysing:- " & " Graphs To Find:- " & shpList.Count
+             shp.Delete
+        Next shp
+
+        Dim s As Cell
+        
+    Application.StatusBar = ""
+
+    RemoveUnWantedGraphs = "All Shapes In Range Deleted"
+
+End Function
+
+Function ListToHtml() As Variant
+Dim i As Integer
+Dim n As Integer
+Dim f As Integer
+Dim str As String
+Dim aList() As String
+For i = 1 To ActiveDocument.Lists.Count
+    Dim counter As Integer: counter = 1
+    Set alst = ActiveDocument.Lists(i).Range.ListParagraphs
+   For Each para In alst
+    Set rng = para.Range
+    rng.ListFormat.RemoveNumbers
+    Dim listStart As String: listStart = "<li>"
+    Dim listEnd As String: listEnd = "</li>"
+    str = ""
+    str = listStart & Replace(rng.Text, Chr(13), "") & listEnd
+    rng.Text = str
+    counter = counter + 1
+   Next para
+ 
+Next i
+ListToHtml = "List converted to HTML"
+End Function
+
+Sub UpdateDocLinks()
+    Dim oLink As Hyperlink
+     Dim dblQuote As String: dblQuote = Chr(34)
+    For Each oLink In ActiveDocument.Hyperlinks
+     Dim str As String: str = ""
+      str = "<a href=" & dblQuote & oLink.Address & dblQuote & " target=" & dblQuote & "_blank" & dblQuote & ">"
+      str = str + oLink.Range.Text
+      str = str + "</a>"
+     oLink.Range.Text = str
+    Next oLink
+End Sub
